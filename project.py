@@ -1,11 +1,10 @@
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup # type: ignore
 from urllib.request import urlopen,Request
-import pandas as pd
+import pandas as pd # type: ignore
 from datetime import date
-from datetime import timedelta
-import nltk
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-import matplotlib.pyplot as plt
+from datetime import datetime
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer # type: ignore
+import matplotlib.pyplot as plt # type: ignore
 
 #web scraping 
 
@@ -41,7 +40,7 @@ for ticker in tickers:
     news_tables[ticker+'_date'] = date_list
     news_tables[ticker+'_time'] = time_list
 
-##sentiment analysis using nltk + preprocessing
+#preprocessing + sentiment analysis using nltk(vader) 
 
 titles_df = pd.DataFrame(news_tables)
 func = lambda x: SentimentIntensityAnalyzer().polarity_scores(x)['compound'] if x else 0
@@ -49,9 +48,6 @@ func = lambda x: SentimentIntensityAnalyzer().polarity_scores(x)['compound'] if 
 for ticker in tickers:
     titles_df[ticker+'_compound_score'] = titles_df[ticker].apply(func)
 
-print(titles_df)
-
-#visualization 
 nvdia_mean = titles_df[['NVDA_date','NVDA_compound_score']].groupby(['NVDA_date']).mean().reset_index()
 tsla_mean = titles_df[['TSLA_date','TSLA_compound_score']].groupby(['TSLA_date']).mean().reset_index()
 aapl_mean = titles_df[['AAPL_date','AAPL_compound_score']].groupby(['AAPL_date']).mean().reset_index()
@@ -61,15 +57,13 @@ mean_df['Date'] = nvdia_mean['NVDA_date']
 mean_df['NVDA'] = nvdia_mean['NVDA_compound_score']
 mean_df['TSLA'] = tsla_mean['TSLA_compound_score']
 mean_df['AAPL'] = aapl_mean['AAPL_compound_score']
-plt.figure()
-mean_df.plot(kind = 'bar')
+mean_df['Date'] = mean_df['Date'].replace('Today', datetime.today().strftime('%b-%d-%y'))
+mean_df['Date'] = pd.to_datetime(mean_df['Date'], format='%b-%d-%y').dt.date
+
+#visualization 
+mean_df.plot(kind = 'bar',x='Date')
+plt.legend()
 plt.show()
-
-
-
-
-
-#model
 
 
 
