@@ -2,9 +2,11 @@ from bs4 import BeautifulSoup # type: ignore
 from urllib.request import urlopen,Request
 import pandas as pd # type: ignore
 from datetime import date
-from datetime import datetime
+import datetime
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer # type: ignore
 import matplotlib.pyplot as plt # type: ignore
+import yfinance as yf # type: ignore
+from pytz import timezone # type: ignore
 
 #web scraping 
 
@@ -48,22 +50,93 @@ func = lambda x: SentimentIntensityAnalyzer().polarity_scores(x)['compound'] if 
 for ticker in tickers:
     titles_df[ticker+'_compound_score'] = titles_df[ticker].apply(func)
 
-nvdia_mean = titles_df[['NVDA_date','NVDA_compound_score']].groupby(['NVDA_date']).mean().reset_index()
+titles_df['NVDA_date_time'] = titles_df['NVDA_date'].str.cat(titles_df['NVDA_time'], sep=' ')
+titles_df['TSLA_date_time'] = titles_df['TSLA_date'].str.cat(titles_df['TSLA_time'], sep=' ')
+titles_df['AAPL_date_time'] = titles_df['AAPL_date'].str.cat(titles_df['AAPL_time'], sep=' ')
+
+nyc_tz = timezone("America/New_York")
+
+def parse_time(row):
+    if "Today" in row:
+        today = datetime.datetime.now(nyc_tz).date()  
+        time_part = datetime.datetime.strptime(row.replace('Today ', ''), '%I:%M%p').time()
+        combined = datetime.datetime.combine(today, time_part)
+    else:
+        combined = datetime.datetime.strptime(row, '%b-%d-%y %I:%M%p')
+    return nyc_tz.localize(combined)
+
+titles_df['NVDA_date_time'] = titles_df['NVDA_date_time'].apply(parse_time)
+titles_df['TSLA_date_time'] = titles_df['TSLA_date_time'].apply(parse_time)
+titles_df['AAPL_date_time'] = titles_df['AAPL_date_time'].apply(parse_time)
+
+titles_df['NVDA_date'] = titles_df['NVDA_date'].replace('Today', datetime.datetime.now(nyc_tz).date().strftime('%b-%d-%y'))
+titles_df['NVDA_date'] = pd.to_datetime(titles_df['NVDA_date'], format='%b-%d-%y').dt.date
+
+titles_df['TSLA_date'] = titles_df['TSLA_date'].replace('Today', datetime.datetime.now(nyc_tz).date().strftime('%b-%d-%y'))
+titles_df['TSLA_date'] = pd.to_datetime(titles_df['TSLA_date'], format='%b-%d-%y').dt.date
+
+titles_df['AAPL_date'] = titles_df['AAPL_date'].replace('Today',datetime.datetime.now(nyc_tz).date().strftime('%b-%d-%y'))
+titles_df['AAPL_date'] = pd.to_datetime(titles_df['AAPL_date'], format='%b-%d-%y').dt.date
+
+nvidia_mean = titles_df[['NVDA_date','NVDA_compound_score']].groupby(['NVDA_date']).mean().reset_index()
 tsla_mean = titles_df[['TSLA_date','TSLA_compound_score']].groupby(['TSLA_date']).mean().reset_index()
 aapl_mean = titles_df[['AAPL_date','AAPL_compound_score']].groupby(['AAPL_date']).mean().reset_index()
 
-mean_df = pd.DataFrame()
-mean_df['Date'] = nvdia_mean['NVDA_date']
-mean_df['NVDA'] = nvdia_mean['NVDA_compound_score']
-mean_df['TSLA'] = tsla_mean['TSLA_compound_score']
-mean_df['AAPL'] = aapl_mean['AAPL_compound_score']
-mean_df['Date'] = mean_df['Date'].replace('Today', datetime.today().strftime('%b-%d-%y'))
-mean_df['Date'] = pd.to_datetime(mean_df['Date'], format='%b-%d-%y').dt.date
-
 #visualization 
-mean_df.plot(kind = 'bar',x='Date')
-plt.legend()
-plt.show()
+
+nvidia_mean.rename(columns={"NVDA_date": "Date", "NVDA_compound_score": "NVDA"}, inplace=True)
+tsla_mean.rename(columns={"TSLA_date": "Date", "TSLA_compound_score": "TSLA"}, inplace=True)
+aapl_mean.rename(columns={"AAPL_date": "Date", "AAPL_compound_score": "AAPL"}, inplace=True)
+
+mean_df = pd.merge(nvidia_mean,tsla_mean,on='Date',how='outer')
+mean_df = pd.merge(mean_df,aapl_mean,on='Date',how = 'outer')
+
+# mean_df.plot(kind = 'bar',x = 'Date')
+# plt.xlabel("Date")
+# plt.ylabel("Mean Value of Compound Score")
+# plt.title("Comparison of Mean Compound Scores: NVIDIA, Tesla, Apple")
+# plt.legend()
+# plt.show()
+
+#classification based on Vader 
+
+def categorize_sentiment(compound_score):
+    if compound_score > 0.05:
+        return 'Positive'
+    elif compound_score < -0.05:
+        return 'Negative'
+    else:
+        return 'Neutral'
+    
+for ticker in tickers:
+    titles_df[ticker+'_sentiment'] = titles_df[ticker+'_compound_score'].apply(categorize_sentiment)
+
+#time series analysis
+NVDA_time_series_df = pd.DataFrame()
+TSLA_time_series_df = pd.DataFrame()
+AAPL_time_series_df = pd.DataFrame()
+
+for ticker in tickers:
+    start_date = titles_df[ticker+'_date'].iloc[-1]
+    end_date = titles_df[ticker+'_date'].iloc[0]+datetime.timedelta(days=1)
+    data = yf.download(ticker, start=start_date, end=end_date, interval="1m")
+    data.columns = data.columns.get_level_values(0)
+    data.index = data.index.tz_convert(nyc_tz)
+    data = data[['Close']].reset_index()
+    date_time_df = titles_df[[ticker+'_date_time',ticker+'_sentiment']]
+    time_series_df = pd.merge(data,date_time_df,left_on='Datetime',right_on=ticker+'_date_time',how='right')
+    if (ticker == 'NVDA'):
+        NVDA_time_series_df = time_series_df.dropna()
+    elif (ticker == 'TSLA'):
+        TSLA_time_series_df = time_series_df.dropna()
+    else:
+        AAPL_time_series_df = time_series_df.dropna()
+print(AAPL_time_series_df.head())
+    
+
+
+
+
 
 
 
