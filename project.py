@@ -91,12 +91,12 @@ aapl_mean.rename(columns={"AAPL_date": "Date", "AAPL_compound_score": "AAPL"}, i
 mean_df = pd.merge(nvidia_mean,tsla_mean,on='Date',how='outer')
 mean_df = pd.merge(mean_df,aapl_mean,on='Date',how = 'outer')
 
-# mean_df.plot(kind = 'bar',x = 'Date')
-# plt.xlabel("Date")
-# plt.ylabel("Mean Value of Compound Score")
-# plt.title("Comparison of Mean Compound Scores: NVIDIA, Tesla, Apple")
-# plt.legend()
-# plt.show()
+mean_df.plot(kind = 'bar',x = 'Date')
+plt.xlabel("Date")
+plt.ylabel("Mean Value of Compound Score")
+plt.title("Comparison of Mean Compound Scores: NVIDIA, Tesla, Apple")
+plt.legend()
+plt.show()
 
 #classification based on Vader 
 
@@ -122,17 +122,22 @@ for ticker in tickers:
     data = yf.download(ticker, start=start_date, end=end_date, interval="1m")
     data.columns = data.columns.get_level_values(0)
     data.index = data.index.tz_convert(nyc_tz)
-    data = data[['Close']].reset_index()
-    date_time_df = titles_df[[ticker+'_date_time',ticker+'_sentiment']]
+    data = data[['Open','Close']].reset_index()
+    data['price_change'] = data['Close']-data['Open']
+    data['lagged_price_change'] = data['price_change'].shift(-1) 
+    date_time_df = titles_df[[ticker+'_date_time',ticker+'_compound_score']]
     time_series_df = pd.merge(data,date_time_df,left_on='Datetime',right_on=ticker+'_date_time',how='right')
     if (ticker == 'NVDA'):
         NVDA_time_series_df = time_series_df.dropna()
+        NVDA_time_series_df = NVDA_time_series_df[['NVDA_date_time',"NVDA_compound_score","lagged_price_change"]]
     elif (ticker == 'TSLA'):
         TSLA_time_series_df = time_series_df.dropna()
+        TSLA_time_series_df = TSLA_time_series_df[['TSLA_date_time',"TSLA_compound_score","lagged_price_change"]]
     else:
         AAPL_time_series_df = time_series_df.dropna()
-print(AAPL_time_series_df.head())
-    
+        AAPL_time_series_df = AAPL_time_series_df[['AAPL_date_time',"AAPL_compound_score","lagged_price_change"]]
+
+
 
 
 
