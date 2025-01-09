@@ -7,6 +7,14 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer # type: ign
 import matplotlib.pyplot as plt # type: ignore
 import yfinance as yf # type: ignore
 from pytz import timezone # type: ignore
+import numpy as np # type: ignore
+from sklearn.preprocessing import MinMaxScaler # type: ignore
+from sklearn.model_selection import train_test_split # type: ignore
+import tensorflow as tf # type: ignore
+from tensorflow import keras # type: ignore
+from tensorflow.keras import layers # type: ignore
+from sklearn.model_selection import TimeSeriesSplit # type: ignore
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score # type: ignore
 
 #web scraping 
 
@@ -125,17 +133,77 @@ for ticker in tickers:
     data = data[['Open','Close']].reset_index()
     data['price_change'] = data['Close']-data['Open']
     data['lagged_price_change'] = data['price_change'].shift(-1) 
-    date_time_df = titles_df[[ticker+'_date_time',ticker+'_compound_score']]
-    time_series_df = pd.merge(data,date_time_df,left_on='Datetime',right_on=ticker+'_date_time',how='right')
+    date_time_df = titles_df[[ticker+'_date_time',ticker+'_compound_score']].rename(columns = {ticker+'_date_time':'date_time',ticker+'_compound_score':'compound_score'})
+    time_series_df = pd.merge(data,date_time_df,left_on='Datetime',right_on='date_time',how='right')
     if (ticker == 'NVDA'):
         NVDA_time_series_df = time_series_df.dropna()
-        NVDA_time_series_df = NVDA_time_series_df[['NVDA_date_time',"NVDA_compound_score","lagged_price_change"]]
+        NVDA_time_series_df = NVDA_time_series_df[['date_time',"compound_score","lagged_price_change"]]
     elif (ticker == 'TSLA'):
         TSLA_time_series_df = time_series_df.dropna()
-        TSLA_time_series_df = TSLA_time_series_df[['TSLA_date_time',"TSLA_compound_score","lagged_price_change"]]
+        TSLA_time_series_df = TSLA_time_series_df[['date_time',"compound_score","lagged_price_change"]]
     else:
         AAPL_time_series_df = time_series_df.dropna()
-        AAPL_time_series_df = AAPL_time_series_df[['AAPL_date_time',"AAPL_compound_score","lagged_price_change"]]
+        AAPL_time_series_df = AAPL_time_series_df[['date_time',"compound_score","lagged_price_change"]]
+
+#predictive analytics using LSTM
+
+NVDA_time_series_df = NVDA_time_series_df.reset_index(drop=True)
+TSLA_time_series_df = TSLA_time_series_df.reset_index(drop=True)
+AAPL_time_series_df = AAPL_time_series_df.reset_index(drop=True)
+combined_time_series_df = pd.concat([NVDA_time_series_df,TSLA_time_series_df])
+combined_time_series_df = pd.concat([combined_time_series_df,AAPL_time_series_df])
+
+
+scaler = MinMaxScaler(feature_range=(0,1))
+combined_time_series_df[['compound_score','lagged_price_change']] = scaler.fit_transform(combined_time_series_df[['compound_score','lagged_price_change']])
+
+def create_dataset(data, time_step):
+    X, y = [], []
+    for i in range(len(data) - time_step):
+        a = data[i:(i + time_step), 0]  
+        X.append(a)
+        y.append(data[i + time_step, 1])  
+    return np.array(X), np.array(y)
+
+time_step = 5
+X,y = create_dataset(combined_time_series_df[['compound_score','lagged_price_change']].values,time_step)
+X = X.reshape(X.shape[0],X.shape[1],1)
+X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=0.2,random_state=42)
+
+model = keras.Sequential()
+model.add(layers.LSTM(50, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])))
+model.add(layers.Dropout(0.2))
+model.add(layers.LSTM(50, return_sequences=False))
+model.add(layers.Dropout(0.2))
+model.add(layers.Dense(1))
+
+model.compile(optimizer='adam',loss='mean_squared_error')
+
+model.fit(X_train,y_train,epochs=100,batch_size = 16)
+
+predictions = model.predict(X_test)
+
+stock_price_predictions = scaler.inverse_transform(np.concatenate((np.zeros((predictions.shape[0], 1)), predictions), axis=1))[:, 1:]
+
+plt.figure()
+plt.plot(y_test, label='Actual', color='blue')
+plt.plot(stock_price_predictions, label='Predicted', color='orange')
+plt.title('Predicted vs Actual Values')
+plt.ylabel('Price Change')
+plt.xlabel('Sample Index')
+plt.legend(loc='upper right')
+plt.show()
+
+#error metrics
+
+mae = mean_absolute_error(y_test, predictions)
+mse = mean_squared_error(y_test, predictions)
+rmse = np.sqrt(mse)  
+r2 = r2_score(y_test, predictions)
+
+
+
+
 
 
 
