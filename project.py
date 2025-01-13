@@ -13,8 +13,8 @@ from sklearn.model_selection import train_test_split # type: ignore
 import tensorflow as tf # type: ignore
 from tensorflow import keras # type: ignore
 from tensorflow.keras import layers # type: ignore
-from sklearn.model_selection import TimeSeriesSplit # type: ignore
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score # type: ignore
+from sklearn.metrics import mean_squared_error, r2_score,accuracy_score # type: ignore
+from sklearn.ensemble import RandomForestRegressor # type: ignore
 
 #web scraping 
 
@@ -132,7 +132,7 @@ for ticker in tickers:
     data.index = data.index.tz_convert(nyc_tz)
     data = data[['Open','Close']].reset_index()
     data['price_change'] = data['Close']-data['Open']
-    data['lagged_price_change'] = data['price_change'].shift(-1) 
+    data['lagged_price_change'] = data['price_change'].shift(-5) 
     date_time_df = titles_df[[ticker+'_date_time',ticker+'_compound_score']].rename(columns = {ticker+'_date_time':'date_time',ticker+'_compound_score':'compound_score'})
     time_series_df = pd.merge(data,date_time_df,left_on='Datetime',right_on='date_time',how='right')
     if (ticker == 'NVDA'):
@@ -150,61 +150,111 @@ for ticker in tickers:
 NVDA_time_series_df = NVDA_time_series_df.reset_index(drop=True)
 TSLA_time_series_df = TSLA_time_series_df.reset_index(drop=True)
 AAPL_time_series_df = AAPL_time_series_df.reset_index(drop=True)
-combined_time_series_df = pd.concat([NVDA_time_series_df,TSLA_time_series_df])
-combined_time_series_df = pd.concat([combined_time_series_df,AAPL_time_series_df])
 
 
 scaler = MinMaxScaler(feature_range=(0,1))
-combined_time_series_df[['compound_score','lagged_price_change']] = scaler.fit_transform(combined_time_series_df[['compound_score','lagged_price_change']])
-
+NVDA_time_series_df[['compound_score','lagged_price_change']] = scaler.fit_transform(NVDA_time_series_df[['compound_score','lagged_price_change']])
+TSLA_time_series_df[['compound_score','lagged_price_change']] = scaler.fit_transform(TSLA_time_series_df[['compound_score','lagged_price_change']])
+AAPL_time_series_df[['compound_score','lagged_price_change']] = scaler.fit_transform(AAPL_time_series_df[['compound_score','lagged_price_change']])
 def create_dataset(data, time_step):
     X, y = [], []
     for i in range(len(data) - time_step):
         a = data[i:(i + time_step), 0]  
         X.append(a)
-        y.append(data[i + time_step, 1])  
+        y.append(data[i, 1])  
     return np.array(X), np.array(y)
 
-time_step = 5
-X,y = create_dataset(combined_time_series_df[['compound_score','lagged_price_change']].values,time_step)
-X = X.reshape(X.shape[0],X.shape[1],1)
-X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=0.2,random_state=42)
+def lstm_model(df):
+    time_step = 5
+    X,y = create_dataset(df[['compound_score','lagged_price_change']].values,time_step)
+    X = X.reshape(X.shape[0],X.shape[1],1)
+    X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=0.2,random_state=42,shuffle=False)
 
-model = keras.Sequential()
-model.add(layers.LSTM(50, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])))
-model.add(layers.Dropout(0.2))
-model.add(layers.LSTM(50, return_sequences=False))
-model.add(layers.Dropout(0.2))
-model.add(layers.Dense(1))
+    model = keras.Sequential()
+    model.add(layers.LSTM(50, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])))
+    model.add(layers.Dropout(0.2))
+    model.add(layers.LSTM(50, return_sequences=False))
+    model.add(layers.Dropout(0.2))
+    model.add(layers.Dense(1))
 
-model.compile(optimizer='adam',loss='mean_squared_error')
+    model.compile(optimizer='adam',loss='mse')
 
-model.fit(X_train,y_train,epochs=100,batch_size = 16)
+    model.fit(X_train,y_train,epochs=100,batch_size = 32)
 
-predictions = model.predict(X_test)
+    predictions = model.predict(X_test)
 
-stock_price_predictions = scaler.inverse_transform(np.concatenate((np.zeros((predictions.shape[0], 1)), predictions), axis=1))[:, 1:]
+    stock_price_predictions = scaler.inverse_transform(np.concatenate((np.zeros((predictions.shape[0], 1)), predictions), axis=1))[:, 1:]
 
-plt.figure()
-plt.plot(y_test, label='Actual', color='blue')
-plt.plot(stock_price_predictions, label='Predicted', color='orange')
-plt.title('Predicted vs Actual Values')
+    return stock_price_predictions,y_test
+
+def random_forest_model(df):
+    time_step = 5
+    X,y = create_dataset(df[['compound_score','lagged_price_change']].values,time_step)
+    X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=0.2,random_state=42,shuffle=False)
+
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+
+    model.fit(X_train,y_train)
+
+    predictions = model.predict(X_test).flatten() 
+
+
+    return predictions
+
+nvda_pred1,nvda_test = lstm_model(NVDA_time_series_df)
+tsla_pred1,tsla_test = lstm_model(TSLA_time_series_df)
+aapl_pred1,aapl_test = lstm_model(AAPL_time_series_df)
+
+nvda_pred2 = random_forest_model(NVDA_time_series_df)
+tsla_pred2 = random_forest_model(TSLA_time_series_df)
+aapl_pred2 = random_forest_model(AAPL_time_series_df)
+
+
+nvda_combined_pred = ((nvda_pred1.flatten() + nvda_pred2) / 2)
+tsla_combined_pred = ((tsla_pred1.flatten() + tsla_pred2) / 2)
+aapl_combined_pred = ((aapl_pred1.flatten() + aapl_pred2) / 2)
+
+mse = mean_squared_error(nvda_test, nvda_combined_pred) 
+r2 = r2_score(nvda_test, nvda_combined_pred)
+
+print(f'NVDA: {mse} {r2}')
+
+mse = mean_squared_error(tsla_test, tsla_combined_pred) 
+r2 = r2_score(tsla_test, tsla_combined_pred)
+print(f'TSLA: {mse} {r2}')
+
+mse = mean_squared_error(aapl_test, aapl_combined_pred) 
+r2 = r2_score(aapl_test, aapl_combined_pred)
+
+print(f'AAPL: {mse} {r2}')
+
+plt.figure(figsize=(8, 6))
+plt.plot(nvda_combined_pred, label='NVDA Predicted')
+plt.plot(nvda_test, label='NVDA Actual')
+plt.title('NVDA Prediction vs Actual')
 plt.ylabel('Price Change')
 plt.xlabel('Sample Index')
-plt.legend(loc='upper right')
+plt.legend()
 plt.show()
 
-#error metrics
+plt.figure(figsize=(8, 6))
+plt.plot(aapl_combined_pred, label='AAPL Predicted')
+plt.plot(aapl_test, label='AAPL Actual')
+plt.title('AAPL Prediction vs Actual')
+plt.ylabel('Price Change')
+plt.xlabel('Sample Index')
+plt.legend()
+plt.show()
 
-mae = mean_absolute_error(y_test, predictions)
-mse = mean_squared_error(y_test, predictions)
-rmse = np.sqrt(mse)  
-r2 = r2_score(y_test, predictions)
-
-
-
-
-
+plt.figure(figsize=(8, 6))
+plt.plot(tsla_combined_pred, label='TSLA Predicted')
+plt.plot(tsla_test, label='TSLA Actual')
+plt.title('TSLA Prediction vs Actual')
+plt.ylabel('Price Change')
+plt.xlabel('Sample Index')
+plt.legend()
+plt.show()
 
 
 
