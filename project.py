@@ -229,48 +229,44 @@ r2 = r2_score(aapl_test, aapl_combined_pred)
 
 print(f'AAPL: {mse} {r2}')
 
-plt.figure(figsize=(8, 6))
-plt.plot(nvda_combined_pred, label='NVDA Predicted')
-plt.plot(nvda_test, label='NVDA Actual')
+# NVDA
+NVDA_time_series_df['date_time'] = pd.to_datetime(NVDA_time_series_df['date_time']).dt.strftime('%m-%d %H:%M')
+nvda_test_dates = NVDA_time_series_df['date_time'].iloc[-len(nvda_test):]  
+plt.figure(figsize=(12, 6))
+x = range(len(nvda_test_dates))
+plt.plot(x, nvda_combined_pred, label='NVDA Predicted', marker='o')
+plt.plot(x, nvda_test, label='NVDA Actual', marker='x')
+plt.xticks(x,nvda_test_dates,rotation = 45)
 plt.title('NVDA Prediction vs Actual')
 plt.ylabel('Price Change')
-plt.xlabel('Sample Index')
+plt.xlabel('Date')
 plt.legend()
 plt.show()
 
-plt.figure(figsize=(8, 6))
-plt.plot(aapl_combined_pred, label='AAPL Predicted')
-plt.plot(aapl_test, label='AAPL Actual')
+# AAPL
+AAPL_time_series_df['date_time'] = pd.to_datetime(AAPL_time_series_df['date_time']).dt.strftime('%m-%d %H:%M')
+aapl_test_dates = AAPL_time_series_df['date_time'].iloc[-len(aapl_test):]  
+plt.figure(figsize=(12, 6))
+y = range(len(aapl_test_dates))
+plt.plot(y, aapl_combined_pred, label='AAPL Predicted', marker='o')
+plt.plot(y, aapl_test, label='AAPL Actual', marker='x')
+plt.xticks(y,aapl_test_dates,rotation = 45)
 plt.title('AAPL Prediction vs Actual')
 plt.ylabel('Price Change')
-plt.xlabel('Sample Index')
-plt.legend()
+plt.xlabel('Date')
+plt.legend()  
 plt.show()
 
-plt.figure(figsize=(8, 6))
-plt.plot(tsla_combined_pred, label='TSLA Predicted')
-plt.plot(tsla_test, label='TSLA Actual')
+# TSLA
+TSLA_time_series_df['date_time'] = pd.to_datetime(TSLA_time_series_df['date_time']).dt.strftime('%m-%d %H:%M')
+tsla_test_dates = TSLA_time_series_df['date_time'].iloc[-len(tsla_test):]  
+plt.figure(figsize=(12, 6))
+z = range(len(tsla_test_dates))
+plt.plot(z, tsla_combined_pred, label='TSLA Predicted', marker='o')
+plt.plot(z, tsla_test, label='TSLA Actual', marker='x')
+plt.xticks(z,tsla_test_dates,rotation = 45)
 plt.title('TSLA Prediction vs Actual')
 plt.ylabel('Price Change')
-plt.xlabel('Sample Index')
+plt.xlabel('Date')
 plt.legend()
 plt.show()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
